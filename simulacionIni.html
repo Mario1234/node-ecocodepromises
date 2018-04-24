@@ -1,0 +1,22 @@
+<html>
+<head>
+</head>
+<body onload="setTimeout(pideListaIntervalo,2000);">
+    <script>
+        function pideListaIntervalo(){
+            var formulario = document.getElementById("idActualizaListaForm");
+            formulario.submit();   
+        }
+    </script>
+    <p>SIMULACION</p>
+    <ul>listaespecies1a</ul>
+    <form id="idActualizaListaForm" name="" action="/actualizalistaespecies" method="get">
+    </form>
+    <form action="/preparado" method="get">
+        <button type="submit">Estoy listo</button>
+    </form>
+    <form action="/nopreparado" method="get">
+        <button type="submit">Volver</button>
+    </form>
+</body>
+</html>

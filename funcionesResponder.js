@@ -97,7 +97,7 @@ var enviaDatos = module.exports.enviaDatos = function(err2,html_cadena) {
     enviaCadenaHTML(this.respuesta,html_cadena);
 }
 
-var enviaListaSimulaciones = module.exports.enviaListaSimulaciones = function(err2, resultadosRetrollamadas) {
+var enviaListaSimulaciones = module.exports.enviaListaSimulaciones = function(err2, resultadosRetrollamadas,respuesta,rows) {
     if(err2){
         console.log(err2);
     }
@@ -105,14 +105,14 @@ var enviaListaSimulaciones = module.exports.enviaListaSimulaciones = function(er
         iniCadenaHTML = resultadosRetrollamadas[0];
         finCadenaHTML = resultadosRetrollamadas[1];
         var listaSimulaciones = "";
-        if(this.rows.length>0){					
+        if(rows.length>0){					
             listaSimulaciones += "<ul>";
-            this.rows.forEach(function(row) {
+            rows.forEach(function(row) {
                 listaSimulaciones += "<li><button onclick=guardaPulsado('"+row.ID_SIMULACION+"')>"+row.ID_SIMULACION+"</button></li>";
             }, this);
             listaSimulaciones += "</ul>";
         }
-        enviaCadenaHTML(this.respuesta,iniCadenaHTML+listaSimulaciones+finCadenaHTML);
+        enviaCadenaHTML(respuesta,iniCadenaHTML+listaSimulaciones+finCadenaHTML);
     }						
 }
 

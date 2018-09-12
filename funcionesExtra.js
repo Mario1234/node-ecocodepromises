@@ -430,3 +430,24 @@ var movimientosNacimientos = module.exports.movimientosNacimientos = function(ta
 	nacimientos(tablero,fecundaciones);//modifica tablero, lee fecundaciones
 	entregaSemillas(tablero,fecundaciones);//modifica tablero y fecundaciones
 }
+
+//--------------------UTILIDADES------------------
+async function ejecutaFuncionAsincronamente(funcion, elemento) {
+	return funcion(elemento);
+ };
+ 
+ //ejecuta la funcion "funcion" una vez con cada elemento de la lista de elementos como parametro
+ //las ejecuciones se realizan en serie
+ var ejecutaSerieFuncionPorCadaElemento = module.exports.ejecutaSerieFuncionPorCadaElemento = async function (elementos, funcion) {
+	 //por cada elemento bloquea el hilo principal hasta terminar de ejecutae la funcion "funcion" sobre ese elemento, 
+	 //acumula los resultados de cada ejecucion de la funcion sobre cada elemento
+	 var cadenaResultadosAnteriores = [];
+	 var i;
+	 for(i=0;i<elementos.length;i++){
+		 var elemento = elementos[i];	
+		 //bloquea hilo principal hasta que se termine ejecutar la funcion sobre el elemento actual
+		 const resultadoActual = await ejecutaFuncionAsincronamente(funcion,elemento);
+		 cadenaResultadosAnteriores.push(resultadoActual);//concatena el resultado a la cadena de resultados
+	 }
+	 return cadenaResultadosAnteriores;
+ };

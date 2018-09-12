@@ -4,7 +4,7 @@ var funcionesExtra = require( __dirname + '/funcionesExtra.js');
 var funcionesArchivos = require( __dirname + '/funcionesArchivos.js');
 
 //CARGA DE LIBRERIAS EXTERNAS CON REQUIRE
-var ClaseAsync = require("async");//para trabajar con semaforos de procesos asincronos
+//var ClaseAsync = require("async");//para trabajar con semaforos de procesos asincronos
 
 var seguroSemaforo = false;//se usa para asegurar que solo accede un cliente a un recurso
 
@@ -15,15 +15,15 @@ var seguroSemaforo = false;//se usa para asegurar que solo accede un cliente a u
 //marca los usuarios como no preparados
 //mueve gente, realiza nacimientos
 //
-async function ejecutaPaso(respuesta, idSimulacion, paso, retrollamada){	
-	const listaEspeciesSimulacion = await fbd.dameListaEspeciesSimulacionBBDD(idSimulacion);
-	const fecundaciones = await fbd.dameFecundacionesSimulacionBBDD(idSimulacion);
+async function ejecutaPaso(respuesta, idSimulacion, paso){//, retrollamada){	
+	const listaEspeciesSimulacion = await fbd.dameListaEspeciesSimulacionBBDD(idSimulacion).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
+	const fecundaciones = await fbd.dameFecundacionesSimulacionBBDD(idSimulacion).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 	var i;
 	//marca todos los usuarios como no preparados
 	for(i=0;i<listaEspeciesSimulacion.length;i++){	
 		var idUsuario = listaEspeciesSimulacion[i].ID_ESPECIE;	
 		//se marca este usuario como no preparado a que el servidor ejecute el siguiente paso
-		fbd.marcarPreparadoONoBBDD(respuesta,idUsuario,0);
+		fbd.marcarPreparadoONoBBDD(idUsuario,0).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 	}		
 	//si es entrar en la simulacion
 	if(paso<0){
@@ -38,7 +38,7 @@ async function ejecutaPaso(respuesta, idSimulacion, paso, retrollamada){
 			fbd.actualizaFecundacionSimulacionBBDD(idSimulacion,fecundacion);
 		}	
 		fbd.incrementaPasoSimulacionBBDD(idSimulacion);
-		retrollamada();
+		//retrollamada();
 	}
 	//si es algun paso de la simulacion
 	else{
@@ -50,54 +50,57 @@ async function ejecutaPaso(respuesta, idSimulacion, paso, retrollamada){
 			var paramMap = {"idSimulacion":idSimulacion,"idUsuario":idUsuario,"paso":paso};
 			listaParamMap.push(paramMap);						
 		}
-		//ejecuta de manera ordenada el tratamiento de tableros de cada jugador
-		ClaseAsync.map(listaParamMap,fbd.dameTableroPasoBBDD,function(err2,resultados2){
-			var tableroGlobal = {"casillas":[],"individuos":[]};
-			//actualiza de manera ordenada el tablero global con lo devuelto por la lista de lambdas, los tableros
-			//recorre los indivs del primer tab
-			var gente = resultados2[0].individuos;//coge los individuos de ese tablero, son el mismo num de indivs para todos los tableros
-			tableroGlobal.casillas = resultados2[0].casillas;
-			for(i=0;i<gente.length;i++){
-				//guarda en ese indiv del tab global la info del indiv del tab de la especie a la que pertenece ese indiv
-				var tabDeEspecieDeI = resultados2[gente[i].especie];
-				tableroGlobal.individuos.push(tabDeEspecieDeI.individuos[i]);				
-			}					
-			funcionesExtra.movimientosNacimientos(tableroGlobal,fecundaciones);
-			for(i=0;i<fecundaciones.length;i++){
-				var fecundacion = fecundaciones[i];
-				fbd.actualizaFecundacionSimulacionBBDD(idSimulacion,fecundacion);
-			}				
-			var tableroStringGlobal = JSON.stringify(tableroGlobal);
-			//ejecuta en serie la obtencion de codigos de cada jugador, lo devuelve ordenado
-			ClaseAsync.map(listaParamMap,fbd.dameCodigosPasoBBDD,function(err3,resultados3){
-				var listaParamMap3 = [];
-				for(i=0;i<listaEspeciesSimulacion.length;i++){
-					var idUsuario3 = listaEspeciesSimulacion[i].ID_ESPECIE;
-					var codM1=resultados3[i][0];
-					var codH1=resultados3[i][1];
-					var paramMap3 = {"res":respuesta,"idSim":idSimulacion,"paso":paso+1,"idUsu":idUsuario3,
-						"tab":tableroStringGlobal,"codM":codM1,"codH":codH1};
-					listaParamMap3.push(paramMap3);
-				}				
-				//ejecuta en paralelo la creacion del sig paso, el mismo para cada jugador
-				ClaseAsync.map(listaParamMap3,fbd.creaPasoUsuarioBBDD,function(err4,resultados4){
-					fbd.incrementaPasoSimulacionBBDD(idSimulacion);
-					retrollamada();
-				});
-			});								
-		});			
+		//ejecuta de manera ordenada el tratamiento de tableros de cada jugador		
+		const resultados2 = await funcionesExtra.ejecutaSerieFuncionPorCadaElemento(listaParamMap,fbd.dameTableroPasoBBDD).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
+		var tableroGlobal = {"casillas":[],"individuos":[]};
+		//actualiza de manera ordenada el tablero global con lo devuelto por la lista de lambdas, los tableros
+		//recorre los indivs del primer tab
+		var gente = resultados2[0].individuos;//coge los individuos de ese tablero, son el mismo num de indivs para todos los tableros
+		tableroGlobal.casillas = resultados2[0].casillas;
+		for(i=0;i<gente.length;i++){
+			//guarda en ese indiv del tab global la info del indiv del tab de la especie a la que pertenece ese indiv
+			var tabDeEspecieDeI = resultados2[gente[i].especie];
+			tableroGlobal.individuos.push(tabDeEspecieDeI.individuos[i]);				
+		}					
+		funcionesExtra.movimientosNacimientos(tableroGlobal,fecundaciones);
+		for(i=0;i<fecundaciones.length;i++){
+			var fecundacion = fecundaciones[i];
+			fbd.actualizaFecundacionSimulacionBBDD(idSimulacion,fecundacion);
+		}				
+		var tableroStringGlobal = JSON.stringify(tableroGlobal);
+		//esto siguiente podria hacerse en paralelo? creo que si, deberia ser indiferente
+		//ejecuta en serie la obtencion de codigos de cada jugador, lo devuelve ordenado	
+		const resultados3 = await funcionesExtra.ejecutaSerieFuncionPorCadaElemento(listaParamMap,fbd.dameCodigosPasoBBDD).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));			
+		var listaParamMap3 = [];
+		for(i=0;i<listaEspeciesSimulacion.length;i++){
+			var idUsuario3 = listaEspeciesSimulacion[i].ID_ESPECIE;
+			var codM1=resultados3[i][0];
+			var codH1=resultados3[i][1];
+			var paramMap3 = {"idSim":idSimulacion,"paso":paso+1,"idUsu":idUsuario3,
+				"tab":tableroStringGlobal,"codM":codM1,"codH":codH1};
+			listaParamMap3.push(paramMap3);
+		}				
+		//ejecuta en paralelo la creacion del sig paso, el mismo para cada jugador
+		const resultados4 = await Promise.all(listaParamMap3.map(fbd.creaPasoUsuarioBBDD)).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));	
+		fbd.incrementaPasoSimulacionBBDD(idSimulacion);
+		//retrollamada();
 	}
 }
 
-async function creaPasoInicial(respuesta, idSimulacion, idUsuario, paso, retrollamadaParam){
+async function creaPasoInicial(respuesta, idSimulacion, idUsuario, paso){
 	//crea el paso0 para el jugador que se acaba de unir
 	var tablero = funcionesExtra.dameTableroInicial();
 	var tableroString = JSON.stringify(tablero);	
-	const codigosMachosHembras = await fbd.dameCodigosEspecieBBDD(idUsuario);
-	var paramMap = {"res":respuesta,"idSim":idSimulacion,"paso":paso,"idUsu":idUsuario,
+	const codigosMachosHembras = await fbd.dameCodigosEspecieBBDD(idUsuario).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));	
+	var paramMap = {"idSim":idSimulacion,"paso":paso,"idUsu":idUsuario,
 				"tab":tableroString,"codM":codigosMachosHembras[0],"codH":codigosMachosHembras[1]};
-	const resultados = await fbd.creaPasoUsuarioBBDD(paramMap);		
+	const resultados = await fbd.creaPasoUsuarioBBDD(paramMap).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));		
 	return tablero;
+}
+
+function muestraErrorCuenta(error){
+	funcionesArchivos.leeArchivo(__dirname + "\\cuenta.html", fr.enviaMensaje.bind({respuesta: this.respuesta, mensaje:error}));
+	return null;
 }
 
 //------------------------PUBLICAS----------------------------------
@@ -116,21 +119,21 @@ var decisionMachos = module.exports.decisionMachos = async function(peticion,res
 	var fase = peticion.session.fase;
 	//solo si la simulacion esta en la fase 1 que la de machos, la sesion del jugador esta tambien en fase 1
 	//y el paso del jugador es el de la simulacion
-	const faseSim = await fbd.dameFaseSimulacionBBDD(idSimulacion,idUsuario);
-	const pasoSim = await fbd.damePasoSimulacionBBDD(idSimulacion);
+	const faseSim = await fbd.dameFaseSimulacionBBDD(idSimulacion,idUsuario).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
+	const pasoSim = await fbd.damePasoSimulacionBBDD(idSimulacion).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 	if(fase==1 && faseSim==1 && pasoSim==paso){
 		//encapsulamos todos los parametros en un solo objeto porque se usa map despues con dameTableroPasoBBDD
 		var paramMap = {"idSimulacion":idSimulacion,"idUsuario":idUsuario,"paso":paso};
 		//recoge la lista de machos y el tablero de este paso
 		const [indivsEspec, tablero] = await Promise.all(
 			[fbd.dameIndividuosEspecieSexoBBDD(idSimulacion,idUsuario,"M"),
-				fbd.dameTableroPasoBBDD(paramMap)]);
+				fbd.dameTableroPasoBBDD(paramMap)]).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 		//guarda las decisiones de los machos en el tablero del paso actual
 		funcionesExtra.dameTableroActualizadoUsuario(peticion,indivsEspec,tablero,"s");	
 		var tableroString = JSON.stringify(tablero);			
 		const resultados = await fbd.actualizaTableroPasoBBDD(respuesta,idSimulacion,idUsuario,paso,tableroString);		
 		//este usuario esta preparado a que el servidor ejecute el siguiente paso
-		const res2 = await fbd.marcarPreparadoONoBBDD(respuesta,idUsuario,1);
+		const res2 = await fbd.marcarPreparadoONoBBDD(idUsuario,1).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 		respuesta.redirect("/actualizaListaEspecies");//manda al usuario a esperar a que los demas terminen	
 	}
 	else{
@@ -153,18 +156,18 @@ var decisionHembras = module.exports.decisionHembras = async function(peticion,r
 	var fase = peticion.session.fase;
 	//solo si la simulacion esta en la fase 0 que la de hembras, la sesion del jugador esta tambien en fase 0
 	//y el paso del jugador es el de la simulacion
-	const faseSim = await fbd.dameFaseSimulacionBBDD(idSimulacion,idUsuario);
-	const pasoSim = await fbd.damePasoSimulacionBBDD(idSimulacion);
+	const faseSim = await fbd.dameFaseSimulacionBBDD(idSimulacion,idUsuario).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
+	const pasoSim = await fbd.damePasoSimulacionBBDD(idSimulacion).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 	if(fase==0 && faseSim==0 && pasoSim==paso){			
 		//encapsulamos todos los parametros en un solo objeto porque se usa map despues con dameTableroPasoBBDD
 		var paramMap = {"idSimulacion":idSimulacion,"idUsuario":idUsuario,"paso":paso};
 		const [indivsEspec, tablero] = await Promise.all(
 			[fbd.dameIndividuosEspecieSexoBBDD(idSimulacion,idUsuario,"H"),
-				fbd.dameTableroPasoBBDD(paramMap)]);
+				fbd.dameTableroPasoBBDD(paramMap)]).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 		
 		funcionesExtra.dameTableroActualizadoUsuario(peticion,indivsEspec,tablero,"d");
 		var tableroString = JSON.stringify(tablero);					
-		fbd.actualizaTableroPasoBBDD(respuesta,idSimulacion, idUsuario, paso, tableroString,function(){});
+		fbd.actualizaTableroPasoBBDD(idSimulacion, idUsuario, paso, tableroString);
 		var nuevosCodigosEspecie=[];
 		nuevosCodigosEspecie.push(peticion.body.nameCodigoMacho);
 		nuevosCodigosEspecie.push(peticion.body.nameCodigoHembra);
@@ -172,10 +175,10 @@ var decisionHembras = module.exports.decisionHembras = async function(peticion,r
 		//coge los codigos del paso anterior, evolucionan los codigos del paso actual y  despues envia tablero y codigos paso anterior a los machos
 		const [codigos, res2] = await Promise.all(
 			[fbd.dameCodigosPasoBBDD(paramMap),
-				fbd.actualizaCodigosPasoBBDD(idSimulacion, idUsuario, paso, nuevosCodigosEspecie)]);
+				fbd.actualizaCodigosPasoBBDD(idSimulacion, idUsuario, paso, nuevosCodigosEspecie)]).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 		peticion.session.fase = 1;
 		fase=1;						
-		const indivEspSex = await fbd.dameIndividuosEspecieSexoBBDD(idSimulacion, idUsuario, "M");
+		const indivEspSex = await fbd.dameIndividuosEspecieSexoBBDD(idSimulacion, idUsuario, "M").catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 		fr.enviaTableroMachos(respuesta,idSimulacion,idUsuario,tablero, codigos,indivEspSex);
 	}		
 	else{
@@ -189,8 +192,8 @@ var actualizaListaEspecies = module.exports.actualizaListaEspecies = async funct
 	var paso = peticion.session.paso;
 	//mira si empieza/continua la simulacion
 	//si empieza/continua, recoge codigos especie, ejecuta el paso anterior y enviaSemillasHembras y sino pide la lista de especies de nuevo
-	const estanListos = await fbd.miraSiListosSigPasoBBDD(idSimulacion);
-	const pasoSim = await fbd.damePasoSimulacionBBDD(idSimulacion);
+	const estanListos = await fbd.miraSiListosSigPasoBBDD(idSimulacion).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
+	const pasoSim = await fbd.damePasoSimulacionBBDD(idSimulacion).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 	//si estan todos listos o ya se les puso como no preparados y se incremento el paso
 	//entonces ejecuta el paso o enviasemillashembras, respestivamente
 	if(!seguroSemaforo && (estanListos || (pasoSim==paso+1))){
@@ -199,7 +202,7 @@ var actualizaListaEspecies = module.exports.actualizaListaEspecies = async funct
 		if(!seguroSemaforo && pasoSim==paso){
 			seguroSemaforo=true;
 			//ejecuta el paso anterior(todas las decisiones recien enviadas) 
-			const listaEspec = await fbd.dameListaEspeciesSimulacionBBDD(idSimulacion);
+			const listaEspec = await fbd.dameListaEspeciesSimulacionBBDD(idSimulacion).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 			const res2 = await fbd.ejecutaPaso(respuesta,idSimulacion,paso);
 			seguroSemaforo=false;
 			funcionesArchivos.leeArchivo( __dirname + "\\simulacionIni.html", fr.enviaListaEspeciesSimulacion.bind({respuesta: respuesta, listaEspecies:listaEspec}) );
@@ -208,8 +211,8 @@ var actualizaListaEspecies = module.exports.actualizaListaEspecies = async funct
 		//entonces incrementarlo y enviarle semillas a sus hembras para que decidan, fase0
 		else{
 			var paramMap = {"idSimulacion":idSimulacion,"idUsuario":idUsuario,"paso":paso};	
-			const codPaso = await fbd.dameCodigosPasoBBDD(paramMap);	
-			const indivEspSex = await fbd.dameIndividuosEspecieSexoBBDD(idSimulacion, idUsuario, "H");
+			const codPaso = await fbd.dameCodigosPasoBBDD(paramMap).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));	
+			const indivEspSex = await fbd.dameIndividuosEspecieSexoBBDD(idSimulacion, idUsuario, "H").catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 			peticion.session.fase = 0;
 			peticion.session.paso = paso+1;							
 			fr.enviaSemillasHembras(respuesta, idSimulacion, idUsuario, codPaso, indivEspSex);
@@ -218,7 +221,7 @@ var actualizaListaEspecies = module.exports.actualizaListaEspecies = async funct
 	//si todavia no estan todos listos ni se ha incrementado el paso de la simu, seguir esperando
 	else{
 		//pide la lista de especies de la simulacion y la muestra
-		const listaEspec = await fbd.dameListaEspeciesSimulacionBBDD(idSimulacion);
+		const listaEspec = await fbd.dameListaEspeciesSimulacionBBDD(idSimulacion).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 		funcionesArchivos.leeArchivo( __dirname + "\\simulacionIni.html", fr.enviaListaEspeciesSimulacion.bind({respuesta: respuesta, listaEspecies:listaEspec}) );
 	}
 }
@@ -226,7 +229,7 @@ var actualizaListaEspecies = module.exports.actualizaListaEspecies = async funct
 var marcarPreparado = module.exports.marcarPreparado = function(peticion,respuesta){
 	var idUsuario = peticion.session.idUsuario;
 	var idSimulacion = peticion.session.idSimulacion;
-	fbd.marcarPreparadoONoBBDD(respuesta, idUsuario,1);
+	fbd.marcarPreparadoONoBBDD(idUsuario,1).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 }
 
 var entrarSimulacion = module.exports.entrarSimulacion = async function(peticion,respuesta){
@@ -236,8 +239,8 @@ var entrarSimulacion = module.exports.entrarSimulacion = async function(peticion
 	peticion.session.fase=0;
 	var idSimulacion = peticion.session.idSimulacion;
 	var idUsuario = peticion.session.idUsuario;
-	const pasoIni = await fbd.creaPasoInicial(respuesta,idSimulacion,idUsuario,-1);
-	const listaEspec = await fbd.dameListaEspeciesSimulacionBBDD(idSimulacion);
+	const pasoIni = await creaPasoInicial(respuesta,idSimulacion,idUsuario,-1);
+	const listaEspec = await fbd.dameListaEspeciesSimulacionBBDD(idSimulacion).catch(muestraErrorCuenta(error).bind({respuesta: respuesta}));
 	funcionesArchivos.leeArchivo( __dirname + "\\simulacionIni.html", fr.enviaListaEspeciesSimulacion.bind({respuesta: respuesta, listaEspecies:listaEspec}) );
 }
 
@@ -249,7 +252,7 @@ var subirCodigos = module.exports.subirCodigos = async function(peticion,respues
 	var idUsuario = peticion.session.idUsuario;
 	var machoCodigo=peticion.body.machoCodigo;
 	var hembraCodigo=peticion.body.hembraCodigo;
-	const codsUsu = await fbd.subeCodigosUsuarioBBDD(respuesta,idUsuario,machoCodigo,hembraCodigo);
+	const codsUsu = await fbd.subeCodigosUsuarioBBDD(idUsuario,machoCodigo,hembraCodigo);
 	funcionesArchivos.leeArchivo(__dirname + "\\cuenta.html", fr.enviaMensaje.bind({respuesta: respuesta,  mensaje:codsUsu}));
 	// console.log("machoCodigo");
 	// console.log(machoCodigo);
